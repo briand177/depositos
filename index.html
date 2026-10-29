@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Depósitos</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icono-192.png">
+<link rel="apple-touch-icon" href="icono-192.png">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --borde: #2a2f3a; --texto: #e8eaed;
+    --suave: #9aa3b2; --acento: #2e7d32; --alerta: #b3261e; --amarillo: #e0a800;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); }
+  body {
+    margin: 0 auto; padding: 16px; background: var(--bg); color: var(--texto);
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; max-width: 640px;
+  }
+  .cabecera { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; }
+  h1 { font-size: 17px; margin: 0; color: var(--suave); font-weight: 600; }
+  textarea, input {
+    width: 100%; padding: 12px; border-radius: 10px;
+    border: 1px solid var(--borde); background: var(--panel); color: var(--texto);
+    font-size: 16px; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  textarea { min-height: 92px; resize: vertical; line-height: 1.5; }
+  textarea:focus, input:focus { outline: 2px solid var(--acento); border-color: var(--acento); }
+  button {
+    font-size: 16px; font-weight: 600; border: 0; border-radius: 10px;
+    padding: 14px 16px; color: #fff; background: var(--acento); cursor: pointer;
+  }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .5; }
+  .icono { background: var(--panel); border: 1px solid var(--borde); color: var(--suave);
+    padding: 8px 12px; font-size: 18px; }
+  .acciones { display: flex; gap: 8px; margin-top: 10px; }
+  #cargar { flex: 1; padding: 16px; font-size: 17px; }
+  #leer { flex: 0 0 auto; padding: 0 18px; font-size: 22px; background: #37474f; }
+  .atajos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .atajos button { flex: 1 1 auto; background: var(--panel); border: 1px solid var(--borde);
+    color: var(--suave); font-size: 14px; padding: 11px 12px; font-weight: 500; }
+  #modelos { margin-bottom: 14px; }
+  .plantilla {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    background: var(--panel); border: 1px solid var(--borde); border-left: 3px solid var(--color);
+    border-radius: 10px; padding: 8px 8px 8px 12px;
+  }
+  .plantilla code {
+    flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; cursor: pointer;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px;
+    color: var(--suave); padding: 2px 0; scrollbar-width: thin;
+  }
+  .plantilla button { flex: 0 0 auto; padding: 12px 15px; font-size: 13px; background: var(--color); min-width: 92px; }
+  .plantilla .tipo { flex: 0 0 auto; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--color); width: 62px; }
+  #salida { margin-top: 16px; }
+  .tarjeta {
+    background: var(--panel); border: 1px solid var(--borde); border-left: 3px solid var(--suave);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    white-space: pre-wrap; word-break: break-word; font-size: 15px; line-height: 1.55;
+  }
+  .ok { border-left-color: var(--acento); }
+  .mal { border-left-color: var(--alerta); }
+  .aviso { border-left-color: var(--amarillo); }
+  .hora { color: var(--suave); font-size: 12px; margin-bottom: 6px; font-family: ui-monospace, monospace; }
+  .cargando { color: var(--suave); font-style: italic; }
+  .linea { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px;
+    background: var(--bg); border-radius: 6px; padding: 6px 8px; margin: 4px 0 6px; }
+  .tarjeta ul { margin: 4px 0 0; padding-left: 0; list-style: none; white-space: normal; }
+  .tarjeta li { margin: 3px 0; }
+  .tarjeta li.a { color: #ffd54f; }
+  .tarjeta li.i { color: var(--suave); }
+  .tarjeta img { display: block; max-width: 100%; max-height: 240px; margin-top: 10px;
+    border-radius: 6px; cursor: zoom-in; }
+  .tarjeta img.grande { max-height: none; cursor: zoom-out; }
+  b { color: #fff; }
+  #config { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px;
+    padding: 14px; margin-bottom: 14px; }
+  #config label { display: block; font-size: 13px; color: var(--suave); margin: 10px 0 4px; }
+  #config label:first-child { margin-top: 0; }
+  #config .acciones button { flex: 1; }
+  #config .estado { font-size: 14px; margin-top: 10px; min-height: 1em; color: var(--suave); }
+  .arrastrando { outline: 3px dashed var(--acento); outline-offset: -8px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="config" hidden>
+  <label for="cfgUrl">URL del script (la que termina en /exec)</label>
+  <input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+  <label for="cfgClave">Clave de la app</label>
+  <input id="cfgClave" type="password" autocomplete="off">
+  <div class="acciones">
+    <button id="cfgGuardar">Guardar y probar</button>
+    <button id="cfgCerrar" class="icono" style="flex:0 0 auto">✕</button>
+  </div>
+  <div class="estado" id="cfgEstado"></div>
+</div>
+
+<div id="modelos"></div>
+
+<div class="cabecera">
+  <h1>📥 Carga de depósitos</h1>
+  <button class="icono" id="abrirConfig" title="Configuración">⚙️</button>
+</div>
+
+<textarea id="txt" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+<div class="acciones">
+  <button id="cargar">Cargar</button>
+  <button id="leer" title="Leer un comprobante (foto o PDF)">📎</button>
+</div>
+<input id="archivo" type="file" accept="image/*,application/pdf" multiple hidden>
+
+<div class="atajos">
+  <button data-cmd="CSV FC">CSV FC</button>
+  <button data-cmd="LIMPIAR FC">LIMPIAR FC</button>
+  <button data-cmd="ELIMINAR FC">Borrar último</button>
+  <button data-cmd="AYUDA">Ayuda</button>
+</div>
+
+<div id="salida"></div>
+
+<script>
+  var caja = document.getElementById('txt');
+  var btn = document.getElementById('cargar');
+  var salida = document.getElementById('salida');
+  var leyendo = 0;
+
+  // ---------- Configuración (queda guardada solo en este teléfono) ----------
+  function leerConf() {
+    try { return JSON.parse(localStorage.getItem('conf') || 'null') || {}; } catch (e) { return {}; }
+  }
+  var CONF = leerConf();
+  function configurado() { return Boolean(CONF.url && CONF.clave); }
+
+  var panelConf = document.getElementById('config');
+  var cfgEstado = document.getElementById('cfgEstado');
+  function abrirConfig() {
+    document.getElementById('cfgUrl').value = CONF.url || '';
+    document.getElementById('cfgClave').value = CONF.clave || '';
+    cfgEstado.textContent = '';
+    panelConf.hidden = false;
+  }
+  document.getElementById('abrirConfig').onclick = function () {
+    if (panelConf.hidden) abrirConfig(); else panelConf.hidden = true;
+  };
+  document.getElementById('cfgCerrar').onclick = function () { panelConf.hidden = true; };
+  document.getElementById('cfgGuardar').onclick = function () {
+    CONF = {
+      url: document.getElementById('cfgUrl').value.trim(),
+      clave: document.getElementById('cfgClave').value.trim()
+    };
+    try { localStorage.setItem('conf', JSON.stringify(CONF)); } catch (e) {}
+    cfgEstado.textContent = '⏳ Probando…';
+    api({ accion: 'ping' }).then(function (r) {
+      if (r.ok) {
+        recibirModelos(r.modelos);
+        cfgEstado.textContent = '✅ Conectado.';
+        setTimeout(function () { panelConf.hidden = true; }, 700);
+        revisarCompartidos();
+      } else {
+        cfgEstado.textContent = '❌ ' + r.error;
+      }
+    }, function (err) { cfgEstado.textContent = '❌ ' + err.message; });
+  };
+
+  // ---------- Conexión con el script ----------
+  function api(obj) {
+    if (!configurado()) return Promise.reject(new Error('Falta configurar la app (⚙️).'));
+    obj.clave = CONF.clave;
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var corte = setTimeout(function () { if (ctrl) ctrl.abort(); }, 120000);
+    // Sin encabezados extra: así el navegador no hace la consulta previa que Apps Script no soporta.
+    return fetch(CONF.url, { method: 'POST', body: JSON.stringify(obj), signal: ctrl && ctrl.signal })
+      .then(function (r) { return r.text(); }, function (err) {
+        throw new Error(err && err.name === 'AbortError'
+          ? 'El script tardó demasiado en responder.'
+          : 'No se pudo conectar. Revisá internet, la URL (⚙️) y que la implementación tenga acceso "Cualquier persona".');
+      })
+      .then(function (txt) {
+        try { return JSON.parse(txt); } catch (e) {
+          throw new Error('El script no respondió bien. ¿Redesplegaste como versión nueva con acceso "Cualquier persona"?');
+        }
+      })
+      .finally(function () { clearTimeout(corte); });
+  }
+
+  // ---------- Tarjetas de respuesta ----------
+  function hora() {
+    var d = new Date();
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+  function escapar(t) {
+    var div = document.createElement('div');
+    div.textContent = t;
+    return div.innerHTML;
+  }
+  // Las respuestas usan *negrita* como en WhatsApp.
+  function formatear(t) { return escapar(t).replace(/\*([^*\n]+)\*/g, '<b>$1</b>'); }
+  function claseDe(resp) {
+    if (resp.indexOf('❌') > -1) return 'mal';
+    if (resp.indexOf('⚠️') > -1) return 'aviso';
+    return 'ok';
+  }
+  function mostrar(texto, clase) {
+    var d = document.createElement('div');
+    d.className = 'tarjeta ' + clase;
+    d.innerHTML = '<div class="hora">' + hora() + '</div>' + formatear(texto);
+    salida.insertBefore(d, salida.firstChild);
+    return d;
+  }
+  function actualizar(tarjeta, html, clase) {
+    tarjeta.className = 'tarjeta ' + clase;
+    tarjeta.innerHTML = '<div class="hora">' + hora() + '</div>' + html;
+  }
+  function actualizarBoton() { btn.disabled = leyendo > 0 || enviando; }
+
+  // ---------- Comandos ----------
+  var enviando = false;
+  function correrUno(cmd) {
+    var pendiente = mostrar('⏳ ' + cmd, 'cargando');
+    return api({ accion: 'comando', texto: cmd }).then(function (r) {
+      if (!r.ok) { actualizar(pendiente, '❌ ' + formatear(r.error), 'mal'); return false; }
+      actualizar(pendiente, formatear(r.respuesta), claseDe(r.respuesta));
+      return true;
+    }, function (err) {
+      actualizar(pendiente, '❌ ' + formatear(err.message), 'mal');
+      return false;
+    });
+  }
+
+  function enviar() {
+    if (enviando || leyendo) return;
+    var t = caja.value.trim();
+    if (!t) { caja.focus(); return; }
+    // Si hay varias líneas, las carga una por una, en orden.
+    var lineas = t.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    enviando = true; actualizarBoton();
+    var fallidas = [];
+    (function siguiente(i) {
+      if (i >= lineas.length) {
+        enviando = false; actualizarBoton();
+        // Si alguna falló por conexión, queda en el recuadro para reintentar.
+        caja.value = fallidas.join('\n');
+        guardarBorrador();
+        return;
+      }
+      correrUno(lineas[i]).then(function (ok) {
+        if (!ok) fallidas.push(lineas[i]);
+        siguiente(i + 1);
+      });
+    })(0);
+  }
+  btn.onclick = enviar;
+
+  Array.prototype.forEach.call(document.querySelectorAll('.atajos button'), function (b) {
+    b.onclick = function () { correrUno(b.getAttribute('data-cmd')); };
+  });
+
+  // Enter carga. Shift+Enter hace un salto de línea (para cargar varios juntos).
+  caja.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); enviar(); }
+  });
+  // Algunos teclados de Android no avisan el Enter por keydown: se atrapa acá.
+  caja.addEventListener('beforeinput', function (ev) {
+    if (ev.inputType === 'insertLineBreak' || ev.inputType === 'insertParagraph') {
+      ev.preventDefault(); enviar();
+    }
+  });
+
+  // El texto del recuadro sobrevive si la app se cierra o se comparte otro comprobante.
+  function guardarBorrador() { try { localStorage.setItem('borrador', caja.value); } catch (e) {} }
+  caja.addEventListener('input', guardarBorrador);
+  try { caja.value = localStorage.getItem('borrador') || ''; } catch (e) {}
+
+  // ---------- Modelos para copiar ----------
+  // Los manda el script (tienen datos de clientes y este archivo es público).
+  // Se guardan en el teléfono y se actualizan cada vez que abre la app.
+  // {FECHA} se reemplaza por la fecha de hoy (ej. 27/10 o 7/3).
+  function leerModelos() {
+    try { return JSON.parse(localStorage.getItem('modelos') || '[]'); } catch (e) { return []; }
+  }
+  var MODELOS = leerModelos();
+  function recibirModelos(lista) {
+    if (!Array.isArray(lista)) return;
+    MODELOS = lista;
+    try { localStorage.setItem('modelos', JSON.stringify(lista)); } catch (e) {}
+    pintarModelos();
+  }
+  function pintarModelos() {
+    var d0 = new Date();
+    var hoy = d0.getDate() + '/' + (d0.getMonth() + 1);
+    var contenedor = document.getElementById('modelos');
+    contenedor.innerHTML = '';
+    MODELOS.forEach(function (m) {
+      var texto = m.texto.replace('{FECHA}', hoy);
+      var fila = document.createElement('div');
+      fila.className = 'plantilla';
+      fila.style.setProperty('--color', m.color);
+      var tipo = document.createElement('span');
+      tipo.className = 'tipo';
+      tipo.textContent = m.tipo;
+      var code = document.createElement('code');
+      code.textContent = texto;
+      code.title = 'Tocá para copiar';
+      var b = document.createElement('button');
+      b.textContent = 'Copiar';
+      code.onclick = b.onclick = function () { copiar(texto, b); };
+      fila.appendChild(tipo);
+      fila.appendChild(code);
+      fila.appendChild(b);
+      contenedor.appendChild(fila);
+    });
+    caja.placeholder = MODELOS.length
+      ? MODELOS[0].texto.replace('{FECHA}', hoy)
+      : 'FC, BANCO, FECHA, IMPORTE, DNI, NRO, TIPO, CLIENTE';
+  }
+  pintarModelos();
+  // La app instalada puede quedar abierta días: al volver a ella, se actualiza la fecha.
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) pintarModelos(); });
+
+  function copiar(texto, b) {
+    function listo() {
+      b.textContent = '✓ Copiado';
+      setTimeout(function () { b.textContent = 'Copiar'; }, 1400);
+    }
+    function respaldo() {
+      var t = document.createElement('textarea');
+      t.value = texto;
+      t.style.position = 'fixed';
+      t.style.top = '-999px';
+      document.body.appendChild(t);
+      t.select();
+      try { document.execCommand('copy'); listo(); } catch (e) { b.textContent = '✗'; }
+      document.body.removeChild(t);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(listo, respaldo);
+    } else {
+      respaldo();
+    }
+  }
+
+  // ---------- Lectura de comprobantes ----------
+  function aBase64(blob) {
+    return new Promise(function (ok, mal) {
+      var r = new FileReader();
+      r.onload = function () { ok(String(r.result).split(',')[1] || ''); };
+      r.onerror = function () { mal(r.error); };
+      r.readAsDataURL(blob);
+    });
+  }
+
+  function esPdf(f) { return f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''); }
+
+  // Las fotos se achican (lado mayor 2000 px) para que suban rápido sin perder lectura.
+  function preparar(f) {
+    if (esPdf(f)) return aBase64(f).then(function (d) { return { mime: 'application/pdf', datos: d }; });
+    var MAX = 2000;
+    return createImageBitmap(f).then(function (bmp) {
+      var esc = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+      var c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * esc);
+      c.height = Math.round(bmp.height * esc);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return new Promise(function (ok) { c.toBlob(ok, 'image/jpeg', 0.88); });
+    }).then(function (blob) {
+      return aBase64(blob).then(function (d) {
+        return { mime: 'image/jpeg', datos: d, vista: URL.createObjectURL(blob) };
+      });
+    }, function () {
+      // Formato que el navegador no puede abrir (ej. HEIC): se manda tal cual.
+      return aBase64(f).then(function (d) {
+        return { mime: f.type || 'image/jpeg', datos: d, vista: null };
+      });
+    });
+  }
+
+  function agregarLinea(linea) {
+    var actual = caja.value.replace(/\s+$/, '');
+    caja.value = actual ? actual + '\n' + linea : linea;
+    guardarBorrador();
+  }
+
+  function leerUno(f) {
+    var pendiente = mostrar('⏳ Leyendo ' + (esPdf(f) ? 'PDF' : 'comprobante') + '…', 'cargando');
+    var vista = null;
+    return preparar(f).then(function (p) {
+      vista = p.vista;
+      return api({ accion: 'leer', mime: p.mime, datos: p.datos });
+    }).then(function (r) {
+      if (!r.ok) {
+        actualizar(pendiente, '❌ ' + formatear(r.error), 'mal');
+      } else {
+        agregarLinea(r.linea);
+        var avisos = r.avisos || [];
+        var hayAvisos = avisos.some(function (a) { return a.nivel === 'aviso'; });
+        var html = (hayAvisos ? '⚠️ <b>Revisá antes de cargar</b>' : '📄 <b>Leído — revisá y cargá</b>') +
+          '<div class="linea">' + escapar(r.linea) + '</div>';
+        if (avisos.length) {
+          html += '<ul>' + avisos.map(function (a) {
+            return '<li class="' + (a.nivel === 'aviso' ? 'a' : 'i') + '">' +
+              (a.nivel === 'aviso' ? '⚠️ ' : 'ℹ️ ') + escapar(a.texto) + '</li>';
+          }).join('') + '</ul>';
+        }
+        actualizar(pendiente, html, hayAvisos ? 'aviso' : 'ok');
+      }
+    }, function (err) {
+      actualizar(pendiente, '❌ ' + formatear(err.message || String(err)), 'mal');
+    }).then(function () {
+      if (vista) {
+        var img = document.createElement('img');
+        img.src = vista;
+        img.alt = 'Comprobante';
+        img.onclick = function () { img.classList.toggle('grande'); };
+        pendiente.appendChild(img);
+      }
+    });
+  }
+
+  function leerArchivos(lista) {
+    var archivos = Array.prototype.filter.call(lista || [], function (f) {
+      return esPdf(f) || /^image\//.test(f.type || '');
+    });
+    if (!archivos.length) return;
+    if (!configurado()) { abrirConfig(); mostrar('❌ Primero configurá la app (⚙️).', 'mal'); return; }
+    leyendo++; actualizarBoton();
+    var cadena = Promise.resolve();
+    archivos.forEach(function (f) { cadena = cadena.then(function () { return leerUno(f); }); });
+    cadena.then(function () { leyendo--; actualizarBoton(); });
+  }
+
+  var inputArchivo = document.getElementById('archivo');
+  document.getElementById('leer').onclick = function () { inputArchivo.click(); };
+  inputArchivo.onchange = function () { leerArchivos(inputArchivo.files); inputArchivo.value = ''; };
+
+  // En la PC: pegar una imagen copiada (Ctrl+V) o arrastrar el archivo a la página.
+  document.addEventListener('paste', function (ev) {
+    var files = ev.clipboardData && ev.clipboardData.files;
+    if (files && files.length) { ev.preventDefault(); leerArchivos(files); }
+  });
+  document.addEventListener('dragover', function (ev) { ev.preventDefault(); document.body.classList.add('arrastrando'); });
+  document.addEventListener('dragleave', function (ev) {
+    if (!ev.relatedTarget) document.body.classList.remove('arrastrando');
+  });
+  document.addEventListener('drop', function (ev) {
+    ev.preventDefault();
+    document.body.classList.remove('arrastrando');
+    leerArchivos(ev.dataTransfer && ev.dataTransfer.files);
+  });
+
+  // Comprobantes compartidos desde WhatsApp: sw.js los deja guardados y abre la app.
+  function revisarCompartidos() {
+    if (!window.caches || !configurado()) return;
+    caches.open('compartidos').then(function (cache) {
+      return cache.keys().then(function (reqs) {
+        return Promise.all(reqs.map(function (rq) {
+          return cache.match(rq).then(function (r) {
+            return r.blob().then(function (b) {
+              var nombre = decodeURIComponent(r.headers.get('X-Nombre') || '') || 'comprobante';
+              return cache.delete(rq).then(function () {
+                return new File([b], nombre, { type: b.type || r.headers.get('Content-Type') || '' });
+              });
+            });
+          });
+        }));
+      });
+    }).then(function (archivos) {
+      if (location.search) history.replaceState(null, '', location.pathname);
+      if (archivos && archivos.length) leerArchivos(archivos);
+    });
+  }
+
+  // ---------- Arranque ----------
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+  if (!configurado()) abrirConfig();
+  else api({ accion: 'ping' }).then(function (r) { if (r.ok) recibirModelos(r.modelos); }, function () {});
+  revisarCompartidos();
+</script>
+</body>
+</html>
