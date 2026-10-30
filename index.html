@@ -74,6 +74,7 @@
   .tarjeta li { margin: 3px 0; }
   .tarjeta li.a { color: #ffd54f; }
   .tarjeta li.i { color: var(--suave); }
+  .tarjeta button.chico { margin-top: 8px; padding: 9px 14px; font-size: 14px; background: #37474f; }
   .tarjeta img { display: block; max-width: 100%; max-height: 240px; margin-top: 10px;
     border-radius: 6px; cursor: zoom-in; }
   .tarjeta img.grande { max-height: none; cursor: zoom-out; }
@@ -170,25 +171,128 @@
   };
 
   // ---------- Conexión con el script ----------
+  // Los pedidos los hace sw.js (el "service worker"), que sigue andando aunque
+  // cambies de app. La respuesta queda guardada y se muestra al volver.
+  // Cada pedido lleva un id: si se reintenta, el script no lo carga dos veces.
+  var pendientes = {};
+  var swListo = false;
+  var vistos = {};
+
+  function nuevoId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
   function api(obj) {
     if (!configurado()) return Promise.reject(new Error('Falta configurar la app (⚙️).'));
     obj.clave = CONF.clave;
-    var ctrl = window.AbortController ? new AbortController() : null;
-    var corte = setTimeout(function () { if (ctrl) ctrl.abort(); }, 120000);
-    // Sin encabezados extra: así el navegador no hace la consulta previa que Apps Script no soporta.
-    return fetch(CONF.url, { method: 'POST', body: JSON.stringify(obj), signal: ctrl && ctrl.signal })
-      .then(function (r) { return r.text(); }, function (err) {
-        throw new Error(err && err.name === 'AbortError'
-          ? 'El script tardó demasiado en responder.'
-          : 'No se pudo conectar. Revisá internet, la URL (⚙️) y que la implementación tenga acceso "Cualquier persona".');
-      })
-      .then(function (txt) {
-        try { return JSON.parse(txt); } catch (e) {
-          throw new Error('El script no respondió bien. ¿Redesplegaste como versión nueva con acceso "Cualquier persona"?');
-        }
-      })
-      .finally(function () { clearTimeout(corte); });
+    obj.id = nuevoId();
+    if (obj.accion === 'comando') marcarEnCurso(obj.id, obj.texto);
+    var sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+    var pedido;
+    if (swListo && sw) {
+      pedido = new Promise(function (ok) {
+        pendientes[obj.id] = ok;
+        sw.postMessage({ tipo: 'api', id: obj.id, url: CONF.url, cuerpo: JSON.stringify(obj),
+          accion: obj.accion, texto: obj.texto || '' });
+      }).then(function (r) {
+        // Si sw.js no pudo conectarse, lo intenta la página (mismo id: no se duplica).
+        return (r.estado === 'error' && r.error === 'red') ? pedirDirecto(obj) : r;
+      });
+    } else {
+      // Sin service worker (primera vez que se abre): pedido directo.
+      pedido = pedirDirecto(obj);
+    }
+    return pedido.then(interpretar);
   }
+
+  function pedirDirecto(obj) {
+    return fetch(CONF.url, { method: 'POST', body: JSON.stringify(obj) })
+      .then(function (r) { return r.text(); })
+      .then(function (t) { return { estado: 'ok', cuerpo: t }; },
+            function (e) { return { estado: 'error', error: 'red', detalle: String(e && e.message || e) }; })
+      .then(function (r) { quitarEnCurso(obj.id); return r; });
+  }
+
+  function interpretar(r) {
+    if (r.estado !== 'ok') {
+      throw new Error(r.error === 'tiempo'
+        ? 'El script tardó demasiado en responder.'
+        : 'No se pudo conectar. Revisá internet, la URL (⚙️) y que la implementación tenga acceso "Cualquier persona".' +
+          (r.detalle ? ' (' + r.detalle + ')' : ''));
+    }
+    try { return JSON.parse(r.cuerpo); } catch (e) {
+      throw new Error('El script no respondió bien. ¿Redesplegaste como versión nueva con acceso "Cualquier persona"?');
+    }
+  }
+
+  // Llega una respuesta desde sw.js (por mensaje, o leída de lo guardado al volver a la app).
+  function recibirResultado(r) {
+    if (!r || !r.id || vistos[r.id]) return;
+    vistos[r.id] = true;
+    if (window.caches) caches.open('resultados').then(function (c) { c.delete('./resultado/' + r.id); });
+    quitarEnCurso(r.id);
+    var esperando = pendientes[r.id];
+    if (esperando) { delete pendientes[r.id]; esperando(r); return; }
+    // Respuesta de algo pedido antes de que la app se cerrara.
+    if (Date.now() - (r.t || 0) > 12 * 3600 * 1000) return;
+    var res;
+    try { res = interpretar(r); } catch (e) {
+      mostrar('❌ ' + (r.texto || 'Pedido') + '\n' + e.message, 'mal');
+      if (r.accion === 'comando' && r.texto) agregarLinea(r.texto);
+      return;
+    }
+    if (r.accion === 'comando') mostrarComando(mostrar('', 'ok'), res);
+    else if (r.accion === 'leer') mostrarLectura(mostrar('', 'ok'), res);
+  }
+
+  function revisarResultados() {
+    if (!window.caches) return Promise.resolve();
+    return caches.open('resultados').then(function (c) {
+      return c.keys().then(function (reqs) {
+        return Promise.all(reqs.map(function (rq) {
+          return c.match(rq).then(function (x) { return x && x.json(); }).then(recibirResultado, function () {});
+        }));
+      });
+    });
+  }
+
+  // Líneas mandadas a cargar que todavía no tienen respuesta (sobreviven si la app se cierra).
+  function leerEnCurso() {
+    try { return JSON.parse(localStorage.getItem('enCurso') || '{}'); } catch (e) { return {}; }
+  }
+  function guardarEnCurso(m) { try { localStorage.setItem('enCurso', JSON.stringify(m)); } catch (e) {} }
+  function marcarEnCurso(id, texto) { var m = leerEnCurso(); m[id] = { texto: texto, t: Date.now() }; guardarEnCurso(m); }
+  function quitarEnCurso(id) { var m = leerEnCurso(); if (m[id]) { delete m[id]; guardarEnCurso(m); } }
+
+  // Si una línea lleva más de 3 minutos sin respuesta, vuelve al recuadro con aviso.
+  function revisarEnCurso() {
+    var m = leerEnCurso();
+    Object.keys(m).forEach(function (id) {
+      if (pendientes[id] || Date.now() - m[id].t < 180000) return;
+      quitarEnCurso(id);
+      if (m[id].texto && /^(FC|RV)/i.test(m[id].texto)) {
+        agregarLinea(m[id].texto);
+        mostrar('⚠️ No llegó la respuesta de:\n' + m[id].texto +
+          '\n\nVolvió al recuadro. Puede que ya se haya cargado: si la mandás de nuevo y estaba, el script avisa que es duplicado.', 'aviso');
+      }
+    });
+  }
+
+  function revisarTodo() { revisarResultados().then(revisarEnCurso); }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', function (ev) {
+      var d = ev.data || {};
+      if (d.tipo === 'resultado') recibirResultado(d.r);
+      else if (d.tipo === 'version' && d.v >= 2) swListo = true;
+    });
+    var preguntarVersion = function () {
+      var c = navigator.serviceWorker.controller;
+      if (c) c.postMessage({ tipo: 'version' });
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', preguntarVersion);
+    if (navigator.serviceWorker.startMessages) navigator.serviceWorker.startMessages();
+    preguntarVersion();
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) revisarTodo(); });
 
   // ---------- Tarjetas de respuesta ----------
   function hora() {
@@ -218,43 +322,38 @@
     tarjeta.className = 'tarjeta ' + clase;
     tarjeta.innerHTML = '<div class="hora">' + hora() + '</div>' + html;
   }
-  function actualizarBoton() { btn.disabled = leyendo > 0 || enviando; }
+  // Ya no se bloquea el botón: se puede seguir cargando mientras hay pedidos en curso.
+  function actualizarBoton() {}
 
   // ---------- Comandos ----------
-  var enviando = false;
+  function mostrarComando(tarjeta, r) {
+    if (!r.ok) { actualizar(tarjeta, '❌ ' + formatear(r.error), 'mal'); return false; }
+    actualizar(tarjeta, formatear(r.respuesta) +
+      (r.repetido ? '\n\n<i>(Ya se había cargado: no se repitió.)</i>' : ''), claseDe(r.respuesta));
+    return true;
+  }
+
   function correrUno(cmd) {
     var pendiente = mostrar('⏳ ' + cmd, 'cargando');
     return api({ accion: 'comando', texto: cmd }).then(function (r) {
-      if (!r.ok) { actualizar(pendiente, '❌ ' + formatear(r.error), 'mal'); return false; }
-      actualizar(pendiente, formatear(r.respuesta), claseDe(r.respuesta));
-      return true;
+      return mostrarComando(pendiente, r);
     }, function (err) {
       actualizar(pendiente, '❌ ' + formatear(err.message), 'mal');
       return false;
     });
   }
 
+  // Manda todas las líneas de una (se cargan en orden) y vacía el recuadro.
+  // Si alguna no se pudo cargar por conexión o clave, vuelve al recuadro.
   function enviar() {
-    if (enviando || leyendo) return;
     var t = caja.value.trim();
     if (!t) { caja.focus(); return; }
-    // Si hay varias líneas, las carga una por una, en orden.
     var lineas = t.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-    enviando = true; actualizarBoton();
-    var fallidas = [];
-    (function siguiente(i) {
-      if (i >= lineas.length) {
-        enviando = false; actualizarBoton();
-        // Si alguna falló por conexión, queda en el recuadro para reintentar.
-        caja.value = fallidas.join('\n');
-        guardarBorrador();
-        return;
-      }
-      correrUno(lineas[i]).then(function (ok) {
-        if (!ok) fallidas.push(lineas[i]);
-        siguiente(i + 1);
-      });
-    })(0);
+    caja.value = '';
+    guardarBorrador();
+    lineas.forEach(function (linea) {
+      correrUno(linea).then(function (ok) { if (!ok && /^(FC|RV)/i.test(linea)) agregarLinea(linea); });
+    });
   }
   btn.onclick = enviar;
 
@@ -387,6 +486,33 @@
     guardarBorrador();
   }
 
+  function mostrarLectura(tarjeta, r) {
+    if (!r.ok) { actualizar(tarjeta, '❌ ' + formatear(r.error), 'mal'); return; }
+    if (r.otraEmpresa) {
+      actualizar(tarjeta, '🚫 <b>No es a Movil Carga: no lo agregué.</b>' +
+        '<div class="linea">Pagado a: ' + escapar(r.destino || '?') + '</div>' +
+        '<div class="linea">' + escapar(r.linea) + '</div>', 'mal');
+      var b = document.createElement('button');
+      b.className = 'chico';
+      b.textContent = 'Agregar igual';
+      b.onclick = function () { agregarLinea(r.linea); b.disabled = true; b.textContent = 'Agregada al recuadro'; };
+      tarjeta.appendChild(b);
+      return;
+    }
+    agregarLinea(r.linea);
+    var avisos = r.avisos || [];
+    var hayAvisos = avisos.some(function (a) { return a.nivel === 'aviso'; });
+    var html = (hayAvisos ? '⚠️ <b>Revisá antes de cargar</b>' : '📄 <b>Leído — revisá y cargá</b>') +
+      '<div class="linea">' + escapar(r.linea) + '</div>';
+    if (avisos.length) {
+      html += '<ul>' + avisos.map(function (a) {
+        return '<li class="' + (a.nivel === 'aviso' ? 'a' : 'i') + '">' +
+          (a.nivel === 'aviso' ? '⚠️ ' : 'ℹ️ ') + escapar(a.texto) + '</li>';
+      }).join('') + '</ul>';
+    }
+    actualizar(tarjeta, html, hayAvisos ? 'aviso' : 'ok');
+  }
+
   function leerUno(f) {
     var pendiente = mostrar('⏳ Leyendo ' + (esPdf(f) ? 'PDF' : 'comprobante') + '…', 'cargando');
     var vista = null;
@@ -394,22 +520,7 @@
       vista = p.vista;
       return api({ accion: 'leer', mime: p.mime, datos: p.datos });
     }).then(function (r) {
-      if (!r.ok) {
-        actualizar(pendiente, '❌ ' + formatear(r.error), 'mal');
-      } else {
-        agregarLinea(r.linea);
-        var avisos = r.avisos || [];
-        var hayAvisos = avisos.some(function (a) { return a.nivel === 'aviso'; });
-        var html = (hayAvisos ? '⚠️ <b>Revisá antes de cargar</b>' : '📄 <b>Leído — revisá y cargá</b>') +
-          '<div class="linea">' + escapar(r.linea) + '</div>';
-        if (avisos.length) {
-          html += '<ul>' + avisos.map(function (a) {
-            return '<li class="' + (a.nivel === 'aviso' ? 'a' : 'i') + '">' +
-              (a.nivel === 'aviso' ? '⚠️ ' : 'ℹ️ ') + escapar(a.texto) + '</li>';
-          }).join('') + '</ul>';
-        }
-        actualizar(pendiente, html, hayAvisos ? 'aviso' : 'ok');
-      }
+      mostrarLectura(pendiente, r);
     }, function (err) {
       actualizar(pendiente, '❌ ' + formatear(err.message || String(err)), 'mal');
     }).then(function () {
@@ -481,6 +592,7 @@
   if (!configurado()) abrirConfig();
   else api({ accion: 'ping' }).then(function (r) { if (r.ok) recibirModelos(r.modelos); }, function () {});
   revisarCompartidos();
+  revisarTodo();
 </script>
 </body>
 </html>
